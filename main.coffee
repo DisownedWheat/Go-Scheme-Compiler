@@ -199,7 +199,7 @@ transformer = (ast) ->
                 expression =
                     type: 'CallExpression'
                     callee: {
-                        type: 'Identifier'
+                        type: 'Callee'
                         name: node.name
                     }
                     arguments: []
@@ -218,17 +218,22 @@ codeGenerator = (node) ->
     switch node.type
         when 'Program' then node.body.map(codeGenerator)
         when 'ExpressionStatement' then return codeGenerator(node.expression) + ';'
+        when 'Callee' then return "\"" + node.name + "\""
         when 'CallExpression'
-            return "#{codeGenerator(node.callee)}(#{node.arguments.map(codeGenerator).join(', ')})"
-        when 'Identifier' then return node.name
-        when 'NumberLiteral' then return node.value
-        when 'StringLiteral' then return '"' + node.value + '"'
+            val = "RT.Call(env, env, #{codeGenerator(node.callee)},\n"
+            val += "[]RT.SchemeInterface{#{node.arguments.map(codeGenerator).join(', ')}})"
+            return val
+        when 'Identifier'
+            return "RT.SchemeSymbol{Value: \"#{node.name}\"}"
+        when 'NumberLiteral'
+            return "RT.SchemeNumber{Value: #{node.value},}"
+        when 'StringLiteral'
+            return "RT.SchemeString{Value: \"#{node.value}\",}"
 
 
 value = "
   (define x 1)
-  (define (y z)
-    (+ x 1))
+  (print (+ (+ x 1) 2))
 "
 
 toks = tokenizer value
@@ -237,8 +242,9 @@ newAst = transformer ast
 code = codeGenerator newAst
 
 console.log "package main \n
-import \"fmt\"\n\n
+import \"github.com/DisownedWheat/go-scheme\"\n\n
 
-func main() {
+func main() {\n
+    env := RT.MakeRootEnv()\n
     #{code.join ';'}
 }"
