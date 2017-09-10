@@ -196,13 +196,24 @@ transformer = (ast) ->
 
         CallExpression:
             enter: (node, parent) ->
-                expression =
-                    type: 'CallExpression'
-                    callee: {
-                        type: 'Callee'
-                        name: node.name
-                    }
-                    arguments: []
+                # Remember to check if this is a var list
+                if parent.type == 'CallExpression' and 
+                parent.name == 'define' and
+                parent._context[parent._context.length]?.type != 'ArgList'
+                    expression =
+                        type: 'ArgList'
+                        arguments: [
+                            type: 'Identifier'
+                            name: node.name
+                        ]
+                else
+                    expression =
+                        type: 'CallExpression'
+                        callee: {
+                            type: 'Callee'
+                            name: node.name
+                        }
+                        arguments: []
 
                 node._context = expression.arguments
 
@@ -219,6 +230,8 @@ codeGenerator = (node) ->
         when 'Program' then node.body.map(codeGenerator)
         when 'ExpressionStatement' then return codeGenerator(node.expression) + ';'
         when 'Callee' then return "\"" + node.name + "\""
+        when 'ArgList'
+            return "SchemeList{#{node.arguments.map(codeGenerator).join(', ')}}"
         when 'CallExpression'
             val = "RT.Call(env, env, #{codeGenerator(node.callee)},\n"
             val += "[]RT.SchemeInterface{#{node.arguments.map(codeGenerator).join(', ')}})"
@@ -234,6 +247,8 @@ codeGenerator = (node) ->
 value = "
   (define x 1)
   (print (+ (+ x 1) 2))
+  (define (x y)
+    (print y))
 "
 
 toks = tokenizer value
@@ -242,7 +257,7 @@ newAst = transformer ast
 code = codeGenerator newAst
 
 console.log "package main \n
-import \"github.com/DisownedWheat/go-scheme\"\n\n
+import \"github.com/DisownedWheat/Go-Scheme-Runtime\"\n\n
 
 func main() {\n
     env := RT.MakeRootEnv()\n
