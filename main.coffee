@@ -196,24 +196,13 @@ transformer = (ast) ->
 
         CallExpression:
             enter: (node, parent) ->
-                # Remember to check if this is a var list
-                if parent.type == 'CallExpression' and 
-                parent.name == 'define' and
-                parent._context[parent._context.length]?.type != 'ArgList'
-                    expression =
-                        type: 'ArgList'
-                        arguments: [
-                            type: 'Identifier'
-                            name: node.name
-                        ]
-                else
-                    expression =
-                        type: 'CallExpression'
-                        callee: {
-                            type: 'Callee'
-                            name: node.name
-                        }
-                        arguments: []
+                expression =
+                    type: 'CallExpression'
+                    callee: {
+                        type: 'Callee'
+                        name: node.name
+                    }
+                    arguments: []
 
                 node._context = expression.arguments
 
@@ -223,6 +212,22 @@ transformer = (ast) ->
 
                 parent._context.push expression
 
+            exit: (node, parent) ->
+
+                # This handles lambda/function declarations
+                i = parent._context.length - 1
+                n = parent._context[i]
+                # If this is not the define function
+                if n.callee.name != 'define' and n.callee.name != 'lambda'
+                    return
+                if n.arguments[0].type != 'CallExpression'
+                    return
+                child = n.arguments[0]
+                child.type = 'Lambda'
+                child.name = child.callee.name
+                child.body = n.arguments.slice(1)
+                n.arguments = [child]
+
     newAst
 
 codeGenerator = (node) ->
@@ -230,8 +235,17 @@ codeGenerator = (node) ->
         when 'Program' then node.body.map(codeGenerator)
         when 'ExpressionStatement' then return codeGenerator(node.expression) + ';'
         when 'Callee' then return "\"" + node.name + "\""
+        when 'Lambda'
+            val = "RT.SchemeFunc{Args: []RT.SchemeInterface{#{node.arguments.map(codeGenerator).join(', ')}},"
+            val += "Name: \"#{node.name}\","
+            val += "Value: func(parent *RT.Env, args []RT.SchemeInterface) RT.SchemeInterface"
+            val += "{var temp RT.Env;env := &temp;env.Parent = parent;env.Variables = map[string]RT.SchemeInterface{};"
+            node.arguments.forEach (x, i) ->
+                val += "env.Variables[\"#{x.name}\"] = args[#{i}]; "
+            val += "#{node.body.slice(0, -1).map(codeGenerator)} return #{node.body.slice(-1).map(codeGenerator)}}}"
+            return val
         when 'ArgList'
-            return "SchemeList{#{node.arguments.map(codeGenerator).join(', ')}}"
+            return "RT.SchemeList{Value: []RT.SchemeInterface{#{node.arguments.map(codeGenerator).join(', ')}}}"
         when 'CallExpression'
             val = "RT.Call(env, env, #{codeGenerator(node.callee)},\n"
             val += "[]RT.SchemeInterface{#{node.arguments.map(codeGenerator).join(', ')}})"
@@ -249,6 +263,10 @@ value = "
   (print (+ (+ x 1) 2))
   (define (x y)
     (print y))
+  (x 1)
+  (define (z a b c)
+    (print a b c))
+  (z \"Hello\" 2 3)
 "
 
 toks = tokenizer value
