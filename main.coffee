@@ -267,6 +267,7 @@ value = "
   (define (z a b c)
     (print a b c))
   (z \"Hello\" 2 3)
+  (print (= \"1\" 1))
 "
 
 toks = tokenizer value
